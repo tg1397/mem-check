@@ -1,0 +1,138 @@
+#include <stdio.h>
+#include "mem.h"
+#include "secded.h"
+#include <stdin>
+
+/*
+  secded_store - called by the system to store a word (16-bits) of data.
+  Before storing the data in the error-prone memory using store, the 
+  function should add check-bits and a parity bit for Single Error
+  Correction, Double Error Detection (SECDED). 
+
+  The function store() will take a 22-bit value (since it takes an unsigned
+  long (32-bits), the high 10 bits will be cleared.
+*/
+
+unsigned long calcparity(unsigned long data) {
+  //returns a long with 0 if even 1s, 1 if odd 1s in 22nd position
+  unsigned long count = 0;
+  for(size_t i = 0; i <= 20; i++) {
+    if((data >> i) & 1)
+      count++;
+  }
+  return count << 21;
+}
+
+unsigned long multxor(unsigned long first, unsigned long second) {
+  unsigned long combo = 0;
+  for(size_t i = 0; i <= 21; i++)
+    if ((first>>i) ^ (second>>i))
+      combo = combo ^ (1<<i);
+  return combo
+}
+
+unsigned long calccheckbits(unsigned short data) {
+  //returns checkbits in locations 17-21
+  unsigned long cb16 = 0;
+  unsigned long cb8 = 0;
+  unsigned long cb4 = 0;
+  unsigned long cb2 = 0;
+  unsigned long cb1 = 0;
+  unsigned long cbits;
+  
+  //cb16
+  for(size_t i = 11; i<=15; i++) 
+    cb16 = (cb16 ^ (data >> i));
+  cb16 = cb16<<20;
+    
+  //cb8
+  for(size_t i = 4; i<=10; i++) 
+    cb8 = (cb8 ^ (data >>i));
+  cb8 = cb8<<19;
+    
+  //cb4
+  for(size_t i = 1; i <= 3; i++) 
+    cb4 = (cb4 ^ (data>>i));
+  for(size_t i = 7; i<=10; i++)
+    cb4 = (cb4 ^ (data>>i));
+  cb4 = cb4 ^ (data>>14);
+  cb4 = cb4 ^ (data>>15);
+  cb4 = cb4<<18;
+    
+  //cb2
+  cb2 = cb2 ^ (data>>0);
+  cb2 = cb2 ^ (data>>2);
+  cb2 = cb2 ^ (data>>3);
+  cb2 = cb2 ^ (data>>5);
+  cb2 = cb2 ^ (data>>6);
+  cb2 = cb2 ^ (data>>9);
+  cb2 = cb2 ^ (data>>10);
+  cb2 = cb2 ^ (data>>12);
+  cb2 = cb2 ^ (data>>13);
+  cb2 = cb2<<17;
+    
+  //cb1
+  cb1 = cb1 ^ (data>>0);
+  cb1 = cb1 ^ (data>>1);
+  cb1 = cb1 ^ (data>>3);
+  cb1 = cb1 ^ (data>>4);
+  cb1 = cb1 ^ (data>>6);
+  cb1 = cb1 ^ (data>>7);
+  cb1 = cb1 ^ (data>>8);
+  cb1 = cb1 ^ (data>>10);
+  cb1 = cb1 ^ (data>>11);
+  cb1 = cb1 ^ (data>>13);
+  cb1 = cb1 ^ (data>>15);
+  cb1 = cb1<<16;
+  
+  cbits = multxor(cb16, cb8);
+  cbits = multxor(cbits, cb4);
+  cbits = multxor(cbits, cb2);
+  cbits = multxor(cbits, cb1);
+  return cbits;
+}
+
+void secded_store (unsigned int address, unsigned short data) {
+    unsigned long data_and_checkbits;
+    unsigned long checkbits;
+    unsigned long parity;
+    
+    checkbits = calccheckbits(data);
+    data_and_checkbits = multxor(checkbits, data);
+    parity = calcparity(data_and_checkbits);
+    data_and_checkbits = multxor(data_and_checkbits, parity);
+
+    store(address, data_and_checkbits);
+}
+
+/*
+  secded_load - called by the system to load a word (16-bits) of data.
+  After loading the data from the error-prone memory using load(), the
+  function should verify the validity of the data using the check-bits and
+  parity bit.
+
+  The function should return the data in the location pointed to by
+  data. The function should return false if there was an uncorrectable error
+  that was detected. It should return true if there were no errors or if the
+  errors were corrected.
+*/
+
+bool secded_load (unsigned int address, unsigned short& data) {
+    unsigned long unchecked_data;
+    unsigned long checked_data;
+    unsigned long parity;
+    unsigned long checkbits;
+    unchecked_data = load(address);
+    parity = calcparity(unchecked_data);
+    checkbits = calccheckbits(unchecked_data);
+
+    checked_data = unchecked_data;
+
+    /* If there are no errors, return the checked data and signal no error */
+
+    data = checked_data;
+
+    /* Signal that there was no error */
+
+    return true;
+}
